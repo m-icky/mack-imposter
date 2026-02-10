@@ -3,6 +3,8 @@ import { io } from 'socket.io-client'
 
 const SERVER_URL = import.meta.env.VITE_SERVER_URL || `http://${window.location.hostname}:3001`
 
+console.log('🔌 Connecting to server:', SERVER_URL)
+
 export function useSocket() {
   const socketRef = useRef(null)
   const [connected, setConnected] = useState(false)

@@ -88,8 +88,28 @@ export default function ChatBox({ messages, currentPlayer, myId, isMyTurn, onSen
             </div>
           </div>
         ) : (
-          messages.map((msg, index) => {
+        messages.map((msg, index) => {
             const isMe = msg.playerId === myId
+            const isSystem = msg.isSystem
+
+            if (isSystem) {
+              return (
+                <motion.div
+                  key={msg.id}
+                  initial={{ opacity: 0, scale: 0.9 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={{ duration: 0.25 }}
+                  className="flex items-center justify-center gap-2 py-1"
+                >
+                  <div className="flex-1 h-px bg-orange-500/20" />
+                  <span className="text-xs text-orange-400/70 font-bold px-2 py-0.5 rounded-full bg-orange-500/10 border border-orange-500/20 whitespace-nowrap">
+                    {msg.playerAvatar} {msg.playerName} — {msg.text}
+                  </span>
+                  <div className="flex-1 h-px bg-orange-500/20" />
+                </motion.div>
+              )
+            }
+
             return (
               <motion.div
                 key={msg.id}
@@ -113,13 +133,7 @@ export default function ChatBox({ messages, currentPlayer, myId, isMyTurn, onSen
                     <span className="ml-1 text-white/15">R{msg.round}</span>
                   </span>
                   <div
-                    className={`
-                      px-3 py-2 rounded-2xl text-sm font-body font-semibold break-words
-                      ${isMe
-                        ? 'rounded-tr-sm'
-                        : 'rounded-tl-sm'
-                      }
-                    `}
+                    className={`px-3 py-2 rounded-2xl text-sm font-body font-semibold break-words ${isMe ? 'rounded-tr-sm' : 'rounded-tl-sm'}`}
                     style={isMe
                       ? { background: 'rgba(0, 245, 255, 0.15)', border: '1px solid rgba(0,245,255,0.2)', color: '#e0fdff' }
                       : { background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff' }

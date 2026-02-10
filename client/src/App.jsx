@@ -163,6 +163,11 @@ export default function App() {
       <AnimatePresence mode="wait">
         {renderScreen()}
       </AnimatePresence>
+      <footer className="fixed bottom-3 left-0 right-0 text-center z-40 pointer-events-none">
+        <p className="text-xs text-white/40 font-mono tracking-wide">
+          Made by MACK 😈
+        </p>
+      </footer>
     </div>
   )
 }

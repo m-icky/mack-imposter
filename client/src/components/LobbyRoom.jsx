@@ -106,6 +106,8 @@ export default function LobbyRoom({ gameState, myId, emit }) {
                   </div>
 
                   <motion.button
+                    disabled={player.isHost || players.length < 3}
+                    style={{ cursor: (player.isHost || players.length < 3) ? "not-allowed" : "pointer" }}
                     whileHover={{ scale: 1.05 }}
                     whileTap={{ scale: 0.95 }}
                     onClick={(e) => { e.stopPropagation(); handleSelectImposter(player.isImposter ? null : player.id) }}
