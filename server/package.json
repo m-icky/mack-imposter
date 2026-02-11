@@ -1,7 +1,7 @@
 {
-  "name": "rsgp-imposter-server",
+  "name": "imposter-server",
   "version": "1.0.0",
-  "description": "RSGP Imposter Game Server",
+  "description": "Imposter Game Server",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",

@@ -411,7 +411,7 @@ const PORT = process.env.PORT || 3001;
 server.listen(PORT, "0.0.0.0", () => {
   const ip = getLocalIP();
   console.log("\n╔══════════════════════════════════════════╗");
-  console.log("║     🎮 RSGP IMPOSTER SERVER STARTED 🎮   ║");
+  console.log("║     🎮 IMPOSTER SERVER STARTED 🎮   ║");
   console.log("╠══════════════════════════════════════════╣");
   console.log(`║  Local:   http://localhost:${PORT}           ║`);
   console.log(`║  Network: http://${ip}:${PORT}       ║`);

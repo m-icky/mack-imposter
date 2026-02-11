@@ -1,4 +1,4 @@
-# 😈 RSGP IMPOSTER
+# 😈 IMPOSTER
 
 A local-network multiplayer social deduction party game. One player is secretly the **Imposter** — everyone else must figure out who it is through clue-based chat rounds!
 
@@ -45,7 +45,7 @@ node server.js
 You'll see output like:
 ```
 ╔══════════════════════════════════════════╗
-║     🎮 RSGP IMPOSTER SERVER STARTED 🎮   ║
+║     🎮 IMPOSTER SERVER STARTED 🎮   ║
 ╠══════════════════════════════════════════╣
 ║  Local:   http://localhost:3001          ║
 ║  Network: http://192.168.1.42:3001       ║
@@ -74,7 +74,7 @@ That's it! 🎉
 ## 📁 Project Structure
 
 ```
-rsgp-imposter/
+imposter/
 ├── server/
 │   ├── server.js          # Node.js + Socket.IO game server
 │   └── package.json

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 
 export default function HomeScreen({ onJoin, connected }) {
-  const [name, setName] = useState(() => localStorage.getItem('rsgp_username') || '')
+  const [name, setName] = useState(() => localStorage.getItem('username') || '')
   const [error, setError] = useState('')
   const [joining, setJoining] = useState(false)
 
@@ -12,7 +12,7 @@ export default function HomeScreen({ onJoin, connected }) {
     if (!trimmed) { setError('Enter your name!'); return }
     if (trimmed.length > 20) { setError('Name too long (max 20 chars)'); return }
     if (!connected) { setError('Connecting to server...'); return }
-    localStorage.setItem('rsgp_username', trimmed)
+    localStorage.setItem('username', trimmed)
     setJoining(true)
     setTimeout(() => onJoin(trimmed), 300)
   }
@@ -42,7 +42,7 @@ export default function HomeScreen({ onJoin, connected }) {
             className="font-display text-5xl md:text-6xl text-white mb-1"
             style={{ textShadow: '0 0 30px rgba(255,45,120,0.5), 0 0 60px rgba(255,45,120,0.2)' }}
           >
-            RSGP
+            Mack's
           </motion.h1>
           <motion.div
             initial={{ opacity: 0, x: -20 }}

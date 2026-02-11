@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: rsgp-imposter
+    name: imposter
     env: node
     buildCommand: npm run build
     startCommand: npm run start

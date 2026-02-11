@@ -1,7 +1,7 @@
 {
-  "name": "rsgp-imposter",
+  "name": "imposter",
   "version": "1.0.0",
-  "description": "RSGP Imposter - Local Network Party Game",
+  "description": "Imposter - Local Network Party Game",
   "scripts": {
     "install:all": "cd server && npm install && cd ../client && npm install",
     "start:server": "cd server && node server.js",
