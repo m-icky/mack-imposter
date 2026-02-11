@@ -51,7 +51,7 @@ export default function LobbyRoom({ gameState, myId, emit }) {
       </motion.div>
 
       {/* Waiting indicator */}
-      {players.length < 3 && (
+      {players.length < 4 && (
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
@@ -59,7 +59,7 @@ export default function LobbyRoom({ gameState, myId, emit }) {
           style={{ background: 'rgba(255,230,0,0.08)', border: '1px solid rgba(255,230,0,0.2)' }}
         >
           <p className="text-yellow-400 text-sm font-bold">
-            ⚠️ Need at least 3 players to start!
+            ⚠️ Need at least 4 players to start!
             <span className="text-yellow-400/60 block font-normal text-xs mt-0.5">
               Share your IP with others on the same Wi-Fi
             </span>

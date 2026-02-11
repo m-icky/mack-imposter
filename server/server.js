@@ -3,11 +3,13 @@ const http = require("http");
 const { Server } = require("socket.io");
 const cors = require("cors");
 const os = require("os");
+const path = require("path");
 
 const app = express();
 
 // Allow all origins in CORS (needed for Vercel → Railway)
 app.use(cors({ origin: "*" }));
+app.use(express.static("../client/dist")); // Serve React build
 
 const server = http.createServer(app);
 const io = new Server(server, {
@@ -43,7 +45,7 @@ let voteTimer = null;
 const TURN_TIMEOUT_MS = 15000;  // 15 seconds per clue turn
 const VOTE_TIMEOUT_MS = 20000;  // 20 seconds per vote
 
-const AVATARS = ["🦊","🐼","🦁","🐯","🐸","🐧","🦄","🐙","🦋","🐺","🦝","🐨", "🐶", "🐱", "🐭", "🐹"];
+const AVATARS = ["🦊", "🐼", "🦁", "🐯", "🐸", "🐧", "🦄", "🐙", "🦋", "🐺", "🦝", "🐨", "🐶", "🐱", "🐭", "🐹"];
 
 function getLocalIP() {
   const interfaces = os.networkInterfaces();
@@ -397,7 +399,12 @@ io.on("connection", (socket) => {
 
 // ─── Health check ──────────────────────────────────────────────────────────────
 app.get("/", (req, res) => {
-  res.json({ status: "RSGP Imposter Server Running 🎮", players: gameState.players.length });
+  res.sendFile(path.join(__dirname, "../client/dist", "index.html"));
+});
+
+// Serve index.html for any other route (SPA support)
+app.get("*", (req, res) => {
+  res.sendFile(path.join(__dirname, "../client/dist", "index.html"));
 });
 
 const PORT = process.env.PORT || 3001;
