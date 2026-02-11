@@ -35,7 +35,7 @@ function generateRoomCode() {
 }
 
 const AVATARS = ["🦊", "🐼", "🦁", "🐯", "🐸", "🐧", "🦄", "🐙", "🦋", "🐺", "🦝", "🐨", "🐶", "🐱", "🐭", "🐹"];
-const TURN_TIMEOUT_MS = 15000;
+const TURN_TIMEOUT_MS = 30000; // 30 seconds for each player's turn
 const VOTE_TIMEOUT_MS = 20000;
 
 function createRoom(hostSocketId, hostName) {
@@ -59,7 +59,13 @@ function createRoom(hostSocketId, hostName) {
     result: null,
     turnDeadline: null,
     voteDeadline: null,
-    timers: { turn: null, vote: null }
+    timers: { turn: null, vote: null },
+    settings: {
+      clueTimeout: 30, // seconds
+      voteTimeout: 20, // seconds
+      totalRounds: 3,
+      imposterCount: 1
+    }
   };
 
   rooms.set(roomId, newRoom);
@@ -96,7 +102,8 @@ function startTurnTimer(roomId) {
   if (!room) return;
 
   clearRoomTimers(room);
-  room.turnDeadline = Date.now() + TURN_TIMEOUT_MS;
+  const timeoutMs = (room.settings?.clueTimeout || 30) * 1000;
+  room.turnDeadline = Date.now() + timeoutMs;
   broadcastState(roomId);
 
   room.timers.turn = setTimeout(() => {
@@ -115,7 +122,7 @@ function startTurnTimer(roomId) {
     });
 
     advanceTurn(roomId);
-  }, TURN_TIMEOUT_MS);
+  }, (room.settings?.clueTimeout || 30) * 1000);
 }
 
 function advanceTurn(roomId) {
@@ -153,7 +160,8 @@ function startVoteTimer(roomId) {
   const pendingVoter = room.players.find(p => !p.hasVoted);
   if (!pendingVoter) return;
 
-  room.voteDeadline = Date.now() + VOTE_TIMEOUT_MS;
+  const timeoutMs = (room.settings?.voteTimeout || 20) * 1000;
+  room.voteDeadline = Date.now() + timeoutMs;
   broadcastState(roomId);
 
   room.timers.vote = setTimeout(() => {
@@ -175,7 +183,7 @@ function startVoteTimer(roomId) {
       broadcastState(roomId);
       startVoteTimer(roomId);
     }
-  }, VOTE_TIMEOUT_MS);
+  }, (room.settings?.voteTimeout || 20) * 1000);
 }
 
 function resolveVotes(roomId) {
@@ -238,7 +246,7 @@ function resetGame(roomId) {
     imposterIndex: null,
     messages: [],
     round: 1,
-    totalRounds: 3,
+    totalRounds: room.settings?.totalRounds || 3,
     turnIndex: 0,
     topic: null,
     votes: {},
@@ -314,32 +322,70 @@ io.on("connection", (socket) => {
     }
   });
 
-  socket.on("selectImposter", ({ targetId }) => {
+  socket.on("updateSettings", (newSettings) => {
     const room = getRoom();
     if (!room || room.hostId !== socket.id || room.phase !== "lobby") return;
 
-    room.players = room.players.map(p => ({
-      ...p,
-      isImposter: p.id === targetId,
-    }));
+    // Validate settings
+    const cleanSettings = {
+      clueTimeout: Math.min(Math.max(parseInt(newSettings.clueTimeout) || 30, 15), 60),
+      voteTimeout: Math.min(Math.max(parseInt(newSettings.voteTimeout) || 20, 10), 45),
+      totalRounds: Math.min(Math.max(parseInt(newSettings.totalRounds) || 3, 1), 6),
+      imposterCount: Math.min(Math.max(parseInt(newSettings.imposterCount) || 1, 1), Math.floor(room.players.length / 4) || 1, room.players.length - 1)
+    };
 
-    room.imposterIndex = room.players.findIndex(p => p.id === targetId);
+    room.settings = cleanSettings;
+    room.totalRounds = cleanSettings.totalRounds;
     broadcastState(room.id);
   });
 
   socket.on("startGame", ({ topic }) => {
+    console.log('🎮 startGame event received from:', socket.id, 'topic:', topic)
     const room = getRoom();
-    if (!room || room.hostId !== socket.id || room.imposterIndex === null) return;
+    console.log('Room found:', room?.id, 'Host:', room?.hostId, 'Players:', room?.players.length)
+    if (!room || room.hostId !== socket.id) {
+      console.log('❌ Not authorized or no room')
+      return;
+    }
+    if (room.players.length < 4) {
+      console.log('❌ Not enough players:', room.players.length)
+      return; // Need at least 4 players
+    }
 
     clearRoomTimers(room);
+
+    // Randomly select imposters based on settings, excluding the host
+    const count = room.settings?.imposterCount || 1;
+    const nonHostIndices = room.players
+      .map((p, idx) => (p.id !== room.hostId ? idx : -1))
+      .filter(idx => idx !== -1);
+
+    const indices = [];
+    const pool = [...nonHostIndices];
+    for (let i = 0; i < count && pool.length > 0; i++) {
+      const randIdx = Math.floor(Math.random() * pool.length);
+      indices.push(pool.splice(randIdx, 1)[0]);
+    }
+
+    console.log(`🎲 Random imposter indices: ${indices.join(", ")}`);
+    room.imposterIndex = indices[0]; // fallback for legacy code
+    room.imposterIndices = indices;
+
+    room.players = room.players.map((p, idx) => ({
+      ...p,
+      isImposter: indices.includes(idx),
+    }));
+
     room.topic = topic;
     room.phase = "countdown";
     room.round = 1;
+    room.totalRounds = room.settings?.totalRounds || 3;
     room.turnIndex = 0;
     room.messages = [];
     room.turnDeadline = null;
     room.voteDeadline = null;
 
+    console.log('✅ Broadcasting state, phase:', room.phase)
     broadcastState(room.id);
 
     room.players.forEach(player => {
