@@ -21,31 +21,50 @@ const io = new Server(server, {
   transports: ["websocket", "polling"],
 });
 
-// ─── Game State ───────────────────────────────────────────────────────────────
-let gameState = {
-  phase: "lobby", // lobby | countdown | game | voting | result
-  players: [],    // { id, name, isHost, isImposter, hasVoted, vote, avatar }
-  hostIndex: 0,
-  imposterIndex: null,
-  messages: [],
-  round: 0,
-  totalRounds: 3,
-  turnIndex: 0,
-  topic: null,
-  votes: {},      // { voterId: targetId }
-  result: null,   // { win: 'players'|'imposter', imposterName, voteCount }
-  turnDeadline: null,   // Unix ms — when current turn expires
-  voteDeadline: null,   // Unix ms — when current vote slot expires
-};
+// ─── Game State & Rooms ───────────────────────────────────────────────────────
+const rooms = new Map();
 
-// Active server-side timers (so we can clear them on reset)
-let turnTimer = null;
-let voteTimer = null;
-
-const TURN_TIMEOUT_MS = 15000;  // 15 seconds per clue turn
-const VOTE_TIMEOUT_MS = 20000;  // 20 seconds per vote
+// Helper: Generate 4-char room code
+function generateRoomCode() {
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+  let code = "";
+  for (let i = 0; i < 4; i++) {
+    code += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return code;
+}
 
 const AVATARS = ["🦊", "🐼", "🦁", "🐯", "🐸", "🐧", "🦄", "🐙", "🦋", "🐺", "🦝", "🐨", "🐶", "🐱", "🐭", "🐹"];
+const TURN_TIMEOUT_MS = 15000;
+const VOTE_TIMEOUT_MS = 20000;
+
+function createRoom(hostSocketId, hostName) {
+  let roomId = generateRoomCode();
+  while (rooms.has(roomId)) {
+    roomId = generateRoomCode();
+  }
+
+  const newRoom = {
+    id: roomId,
+    phase: "lobby",
+    players: [],
+    hostId: hostSocketId,
+    imposterIndex: null,
+    messages: [],
+    round: 0,
+    totalRounds: 3,
+    turnIndex: 0,
+    topic: null,
+    votes: {},
+    result: null,
+    turnDeadline: null,
+    voteDeadline: null,
+    timers: { turn: null, vote: null }
+  };
+
+  rooms.set(roomId, newRoom);
+  return newRoom;
+}
 
 function getLocalIP() {
   const interfaces = os.networkInterfaces();
@@ -59,107 +78,118 @@ function getLocalIP() {
   return "localhost";
 }
 
-function broadcastState() {
-  io.emit("gameState", gameState);
+function broadcastState(roomId) {
+  const room = rooms.get(roomId);
+  if (!room) return;
+
+  const safeState = { ...room, timers: undefined };
+  io.to(roomId).emit("gameState", safeState);
 }
 
-function clearTimers() {
-  if (turnTimer) { clearTimeout(turnTimer); turnTimer = null; }
-  if (voteTimer) { clearTimeout(voteTimer); voteTimer = null; }
+function clearRoomTimers(room) {
+  if (room.timers.turn) { clearTimeout(room.timers.turn); room.timers.turn = null; }
+  if (room.timers.vote) { clearTimeout(room.timers.vote); room.timers.vote = null; }
 }
 
-// Start a 15-second server timer for the current clue turn
-function startTurnTimer() {
-  clearTimers();
-  gameState.turnDeadline = Date.now() + TURN_TIMEOUT_MS;
-  broadcastState();
+function startTurnTimer(roomId) {
+  const room = rooms.get(roomId);
+  if (!room) return;
 
-  turnTimer = setTimeout(() => {
-    if (gameState.phase !== "game") return;
+  clearRoomTimers(room);
+  room.turnDeadline = Date.now() + TURN_TIMEOUT_MS;
+  broadcastState(roomId);
 
-    const skippedPlayer = gameState.players[gameState.turnIndex];
-    // Insert a "skipped" system message
-    gameState.messages.push({
+  room.timers.turn = setTimeout(() => {
+    if (room.phase !== "game") return;
+
+    const skippedPlayer = room.players[room.turnIndex];
+    room.messages.push({
       id: Date.now() + Math.random(),
       playerId: null,
       playerName: skippedPlayer?.name || "Player",
       playerAvatar: skippedPlayer?.avatar || "⏭️",
       text: "⏭️ Time's up — skipped!",
-      round: gameState.round,
+      round: room.round,
       timestamp: Date.now(),
       isSystem: true,
     });
 
-    advanceTurn();
+    advanceTurn(roomId);
   }, TURN_TIMEOUT_MS);
 }
 
-// Advance turn and check for round/phase completion
-function advanceTurn() {
-  gameState.turnIndex = (gameState.turnIndex + 1) % gameState.players.length;
-  const messagesThisRound = gameState.messages.filter(m => m.round === gameState.round && !m.isSystem).length;
+function advanceTurn(roomId) {
+  const room = rooms.get(roomId);
+  if (!room) return;
 
-  if (messagesThisRound >= gameState.players.length) {
-    if (gameState.round >= gameState.totalRounds) {
-      clearTimers();
-      gameState.phase = "voting";
-      gameState.turnDeadline = null;
-      gameState.turnIndex = 0;
-      broadcastState();
-      startVoteTimer();
+  room.turnIndex = (room.turnIndex + 1) % room.players.length;
+  const messagesThisRound = room.messages.filter(m => m.round === room.round && !m.isSystem).length;
+
+  if (messagesThisRound >= room.players.length) {
+    if (room.round >= room.totalRounds) {
+      clearRoomTimers(room);
+      room.phase = "voting";
+      room.turnDeadline = null;
+      room.turnIndex = 0;
+      broadcastState(roomId);
+      startVoteTimer(roomId);
     } else {
-      gameState.round += 1;
-      gameState.turnIndex = 0;
-      broadcastState();
-      startTurnTimer();
+      room.round += 1;
+      room.turnIndex = 0;
+      broadcastState(roomId);
+      startTurnTimer(roomId);
     }
   } else {
-    broadcastState();
-    startTurnTimer();
+    broadcastState(roomId);
+    startTurnTimer(roomId);
   }
 }
 
-// Start a 20-second server timer for the current vote slot
-function startVoteTimer() {
-  clearTimers();
-  // Find first player who hasn't voted yet
-  const pendingVoter = gameState.players.find(p => !p.hasVoted);
+function startVoteTimer(roomId) {
+  const room = rooms.get(roomId);
+  if (!room) return;
+
+  clearRoomTimers(room);
+  const pendingVoter = room.players.find(p => !p.hasVoted);
   if (!pendingVoter) return;
 
-  gameState.voteDeadline = Date.now() + VOTE_TIMEOUT_MS;
-  broadcastState();
+  room.voteDeadline = Date.now() + VOTE_TIMEOUT_MS;
+  broadcastState(roomId);
 
-  voteTimer = setTimeout(() => {
-    if (gameState.phase !== "voting") return;
-    // Auto-skip: cast a null/abstain vote for the pending player
-    const voter = gameState.players.find(p => !p.hasVoted);
+  room.timers.vote = setTimeout(() => {
+    if (room.phase !== "voting") return;
+
+    const voter = room.players.find(p => !p.hasVoted);
     if (!voter) return;
 
-    gameState.votes[voter.id] = "__abstain__";
-    gameState.players = gameState.players.map(p =>
+    room.votes[voter.id] = "__abstain__";
+    room.players = room.players.map(p =>
       p.id === voter.id ? { ...p, hasVoted: true, vote: "__abstain__" } : p
     );
 
-    const allVoted = gameState.players.every(p => p.hasVoted);
+    const allVoted = room.players.every(p => p.hasVoted);
     if (allVoted) {
-      resolveVotes();
+      resolveVotes(roomId);
     } else {
-      gameState.voteDeadline = null;
-      broadcastState();
-      startVoteTimer();
+      room.voteDeadline = null;
+      broadcastState(roomId);
+      startVoteTimer(roomId);
     }
   }, VOTE_TIMEOUT_MS);
 }
 
-function resolveVotes() {
-  clearTimers();
+function resolveVotes(roomId) {
+  const room = rooms.get(roomId);
+  if (!room) return;
+
+  clearRoomTimers(room);
   const tally = {};
-  Object.entries(gameState.votes).forEach(([, targetId]) => {
+  Object.entries(room.votes).forEach(([, targetId]) => {
     if (targetId === "__abstain__") return;
     tally[targetId] = (tally[targetId] || 0) + 1;
   });
 
-  const imposter = gameState.players.find(p => p.isImposter);
+  const imposter = room.players.find(p => p.isImposter);
   let mostVotedId = null;
   if (Object.keys(tally).length > 0) {
     const maxVotes = Math.max(...Object.values(tally));
@@ -168,38 +198,43 @@ function resolveVotes() {
 
   const win = mostVotedId === imposter?.id ? "players" : "imposter";
 
-  gameState.result = {
+  room.result = {
     win,
     imposterName: imposter?.name,
     imposterAvatar: imposter?.avatar,
     mostVotedId,
     tally,
-    topic: gameState.topic,
+    topic: room.topic,
   };
-  gameState.phase = "result";
-  gameState.voteDeadline = null;
-  broadcastState();
+  room.phase = "result";
+  room.voteDeadline = null;
+  broadcastState(roomId);
 }
 
-function resetGame() {
-  clearTimers();
+function resetGame(roomId) {
+  const room = rooms.get(roomId);
+  if (!room) return;
 
-  const players = gameState.players.map(p => ({
+  clearRoomTimers(room);
+
+  let currentHostIdx = room.players.findIndex(p => p.id === room.hostId);
+  if (currentHostIdx === -1) currentHostIdx = 0;
+
+  const nextHostIdx = (currentHostIdx + 1) % room.players.length;
+  const nextHostId = room.players[nextHostIdx].id;
+
+  const players = room.players.map(p => ({
     ...p,
     isImposter: false,
     hasVoted: false,
     vote: null,
-    isHost: false,
+    isHost: p.id === nextHostId,
   }));
 
-  // Rotate host
-  const nextHostIndex = (gameState.hostIndex + 1) % players.length;
-  players[nextHostIndex].isHost = true;
+  room.hostId = nextHostId;
 
-  gameState = {
-    ...gameState,
+  Object.assign(room, {
     phase: "lobby",
-    hostIndex: nextHostIndex,
     imposterIndex: null,
     messages: [],
     round: 1,
@@ -211,114 +246,128 @@ function resetGame() {
     turnDeadline: null,
     voteDeadline: null,
     players,
-  };
+  });
 
-  broadcastState();
+  broadcastState(roomId);
 }
 
 // ─── Socket Handlers ──────────────────────────────────────────────────────────
 io.on("connection", (socket) => {
   console.log(`🔌 Connected: ${socket.id}`);
 
-  // Send current state on connect
-  socket.emit("gameState", gameState);
+  socket.on("join", ({ name, roomId, action }) => {
+    let room;
 
-  // ── Join ──
-  socket.on("join", ({ name }) => {
-    const existingIndex = gameState.players.findIndex(p => p.id === socket.id);
-    if (existingIndex !== -1) return;
+    if (action === "create") {
+      room = createRoom(socket.id, name);
+      console.log(`🏠 Room created: ${room.id} by ${name}`);
+    } else {
+      room = rooms.get(roomId?.toUpperCase());
+      if (!room) {
+        socket.emit("error", { message: "Room not found" });
+        return;
+      }
+      if (room.phase !== "lobby" && room.phase !== "result") {
+        socket.emit("error", { message: "Game already in progress" });
+        return;
+      }
+    }
 
-    const avatarIndex = gameState.players.length % AVATARS.length;
-    const isFirstPlayer = gameState.players.length === 0;
+    socket.join(room.id);
+    socket.data.roomId = room.id;
 
-    const player = {
-      id: socket.id,
-      name,
-      isHost: isFirstPlayer,
-      isImposter: false,
-      hasVoted: false,
-      vote: null,
-      avatar: AVATARS[avatarIndex],
-    };
+    const existingPlayer = room.players.find(p => p.id === socket.id);
+    if (!existingPlayer) {
+      const avatarIndex = room.players.length % AVATARS.length;
+      const isHost = room.players.length === 0 || room.hostId === socket.id;
 
-    if (isFirstPlayer) gameState.hostIndex = 0;
-    gameState.players.push(player);
+      const player = {
+        id: socket.id,
+        name,
+        isHost,
+        isImposter: false,
+        hasVoted: false,
+        vote: null,
+        avatar: AVATARS[avatarIndex],
+      };
 
-    console.log(`👤 Joined: ${name}`);
-    broadcastState();
+      room.players.push(player);
+    }
+
+    console.log(`👤 ${name} joined room ${room.id}`);
+    broadcastState(room.id);
   });
 
-  // ── Reorder Players (Host only) ──
+  const getRoom = () => rooms.get(socket.data.roomId);
+
   socket.on("reorderPlayers", ({ newOrder }) => {
-    const host = gameState.players.find(p => p.id === socket.id && p.isHost);
-    if (!host) return;
+    const room = getRoom();
+    if (!room || room.hostId !== socket.id) return;
 
     const reordered = newOrder
-      .map(id => gameState.players.find(p => p.id === id))
+      .map(id => room.players.find(p => p.id === id))
       .filter(Boolean);
 
-    if (reordered.length === gameState.players.length) {
-      gameState.players = reordered;
-      broadcastState();
+    if (reordered.length === room.players.length) {
+      room.players = reordered;
+      broadcastState(room.id);
     }
   });
 
-  // ── Select Imposter (Host only) ──
   socket.on("selectImposter", ({ targetId }) => {
-    const host = gameState.players.find(p => p.id === socket.id && p.isHost);
-    if (!host || gameState.phase !== "lobby") return;
+    const room = getRoom();
+    if (!room || room.hostId !== socket.id || room.phase !== "lobby") return;
 
-    gameState.players = gameState.players.map(p => ({
+    room.players = room.players.map(p => ({
       ...p,
       isImposter: p.id === targetId,
     }));
 
-    gameState.imposterIndex = gameState.players.findIndex(p => p.id === targetId);
-    broadcastState();
+    room.imposterIndex = room.players.findIndex(p => p.id === targetId);
+    broadcastState(room.id);
   });
 
-  // ── Start Game: Host sends topic ──
   socket.on("startGame", ({ topic }) => {
-    const host = gameState.players.find(p => p.id === socket.id && p.isHost);
-    if (!host || gameState.imposterIndex === null) return;
+    const room = getRoom();
+    if (!room || room.hostId !== socket.id || room.imposterIndex === null) return;
 
-    clearTimers();
-    gameState.topic = topic;
-    gameState.phase = "countdown";
-    gameState.round = 1;
-    gameState.turnIndex = 0;
-    gameState.messages = [];
-    gameState.turnDeadline = null;
-    gameState.voteDeadline = null;
+    clearRoomTimers(room);
+    room.topic = topic;
+    room.phase = "countdown";
+    room.round = 1;
+    room.turnIndex = 0;
+    room.messages = [];
+    room.turnDeadline = null;
+    room.voteDeadline = null;
 
-    broadcastState();
+    broadcastState(room.id);
 
-    // Send role reveals individually
-    gameState.players.forEach(player => {
-      const playerSocket = io.sockets.sockets.get(player.id);
-      if (!playerSocket) return;
+    room.players.forEach(player => {
+      const pSocket = io.sockets.sockets.get(player.id);
+      if (!pSocket) return;
       if (player.isImposter) {
-        playerSocket.emit("roleReveal", { role: "imposter", topic: null });
+        pSocket.emit("roleReveal", { role: "imposter", topic: null });
       } else {
-        playerSocket.emit("roleReveal", { role: "innocent", topic });
+        pSocket.emit("roleReveal", { role: "innocent", topic });
       }
     });
 
-    // Transition to game after countdown then start turn timer
     setTimeout(() => {
-      if (gameState.phase !== "countdown") return; // guard against reset during countdown
-      gameState.phase = "game";
-      broadcastState();
-      startTurnTimer();
+      if (room.phase !== "countdown") return;
+      room.phase = "game";
+      broadcastState(room.id);
+      startTurnTimer(room.id);
     }, 6500);
   });
 
-  // ── Send Chat Message ──
   socket.on("sendMessage", ({ text }) => {
-    const player = gameState.players.find(p => p.id === socket.id);
-    if (!player || gameState.phase !== "game") return;
+    const room = getRoom();
+    if (!room || room.phase !== "game") return;
 
-    const currentPlayer = gameState.players[gameState.turnIndex];
+    const player = room.players.find(p => p.id === socket.id);
+    if (!player) return;
+
+    const currentPlayer = room.players[room.turnIndex];
     if (currentPlayer.id !== socket.id) return;
 
     const message = {
@@ -327,73 +376,67 @@ io.on("connection", (socket) => {
       playerName: player.name,
       playerAvatar: player.avatar,
       text,
-      round: gameState.round,
+      round: room.round,
       timestamp: Date.now(),
       isSystem: false,
     };
 
-    gameState.messages.push(message);
-    advanceTurn();
+    room.messages.push(message);
+    advanceTurn(room.id);
   });
 
-  // ── Submit Vote ──
   socket.on("submitVote", ({ targetId }) => {
-    const voter = gameState.players.find(p => p.id === socket.id);
-    if (!voter || gameState.phase !== "voting" || voter.hasVoted) return;
+    const room = getRoom();
+    if (!room || room.phase !== "voting") return;
 
-    clearTimers(); // Cancel the auto-skip for this voter slot
+    const voter = room.players.find(p => p.id === socket.id);
+    if (!voter || voter.hasVoted) return;
 
-    gameState.votes[socket.id] = targetId;
-    gameState.players = gameState.players.map(p =>
+    clearRoomTimers(room);
+
+    room.votes[socket.id] = targetId;
+    room.players = room.players.map(p =>
       p.id === socket.id ? { ...p, hasVoted: true, vote: targetId } : p
     );
 
-    const allVoted = gameState.players.every(p => p.hasVoted);
+    const allVoted = room.players.every(p => p.hasVoted);
     if (allVoted) {
-      resolveVotes();
+      resolveVotes(room.id);
     } else {
-      gameState.voteDeadline = null;
-      broadcastState();
-      startVoteTimer(); // Start timer for next pending voter
+      room.voteDeadline = null;
+      broadcastState(room.id);
+      startVoteTimer(room.id);
     }
   });
 
-  // ── Restart — any phase, host only ──
   socket.on("restartGame", () => {
-    const host = gameState.players.find(p => p.id === socket.id && p.isHost);
-    if (!host) return;
-    resetGame();
+    const room = getRoom();
+    if (!room || room.hostId !== socket.id) return;
+    resetGame(room.id);
   });
 
-  // ── Disconnect ──
   socket.on("disconnect", () => {
     console.log(`❌ Disconnected: ${socket.id}`);
-    const wasHost = gameState.players.find(p => p.id === socket.id && p.isHost);
-    gameState.players = gameState.players.filter(p => p.id !== socket.id);
+    const roomId = socket.data.roomId;
+    if (!roomId) return;
 
-    if (gameState.players.length === 0) {
-      clearTimers();
-      gameState = {
-        phase: "lobby",
-        players: [],
-        hostIndex: 0,
-        imposterIndex: null,
-        messages: [],
-        round: 1,
-        totalRounds: 3,
-        turnIndex: 0,
-        topic: null,
-        votes: {},
-        result: null,
-        turnDeadline: null,
-        voteDeadline: null,
-      };
-    } else if (wasHost && gameState.players.length > 0) {
-      gameState.hostIndex = 0;
-      gameState.players[0].isHost = true;
+    const room = rooms.get(roomId);
+    if (!room) return;
+
+    const wasHost = room.hostId === socket.id;
+    room.players = room.players.filter(p => p.id !== socket.id);
+
+    if (room.players.length === 0) {
+      clearRoomTimers(room);
+      rooms.delete(roomId);
+      console.log(`🗑️ Room ${roomId} deleted (empty)`);
+    } else {
+      if (wasHost && room.players.length > 0) {
+        room.hostId = room.players[0].id;
+        room.players[0].isHost = true;
+      }
+      broadcastState(roomId);
     }
-
-    broadcastState();
   });
 });
 
@@ -402,7 +445,6 @@ app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "../client/dist", "index.html"));
 });
 
-// Serve index.html for any other route (SPA support)
 app.get("*", (req, res) => {
   res.sendFile(path.join(__dirname, "../client/dist", "index.html"));
 });

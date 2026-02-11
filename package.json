@@ -12,6 +12,7 @@
     "start": "cd server && node server.js"
   },
   "devDependencies": {
-    "concurrently": "^8.2.0"
+    "concurrently": "^8.2.0",
+    "socket.io-client": "^4.8.3"
   }
 }

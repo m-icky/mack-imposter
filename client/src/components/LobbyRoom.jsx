@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react'
 import { motion, AnimatePresence, Reorder } from 'framer-motion'
 
-export default function LobbyRoom({ gameState, myId, emit }) {
+export default function LobbyRoom({ gameState, myId, emit, onLeave }) {
   const [topic, setTopic] = useState('')
   const [topicError, setTopicError] = useState('')
   const [players, setPlayers] = useState(gameState.players)
@@ -37,14 +37,59 @@ export default function LobbyRoom({ gameState, myId, emit }) {
       <motion.div
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="text-center"
+        className="text-center relative"
       >
+        {/* Back Button */}
+        <button
+          onClick={onLeave}
+          className="absolute left-0 top-0 p-2 bg-white/10 hover:bg-white/20 rounded-lg transition-colors text-white/60 hover:text-white"
+          title="Leave Room"
+        >
+          ← Back
+        </button>
+
         <div className="flex items-center justify-center gap-2 mb-1">
           <span className="font-display text-3xl text-white" style={{ textShadow: '0 0 20px rgba(0,245,255,0.5)' }}>
             LOBBY
           </span>
           <span className="text-2xl">🎭</span>
         </div>
+
+        {/* ROOM CODE */}
+        <div className="bg-white/10 rounded-xl p-3 mb-2 inline-flex items-center gap-4 border border-white/20">
+          <div className="text-left">
+            <p className="text-white/40 text-[10px] font-bold uppercase tracking-wider">Room Code</p>
+            <p className="text-3xl font-mono font-bold text-neon-yellow tracking-widest leading-none">
+              {gameState?.id}
+            </p>
+          </div>
+
+          <button
+            onClick={async () => {
+              const code = gameState?.id;
+              if (!code) return;
+
+              try {
+                await navigator.clipboard.writeText(code);
+                console.log("Copied:", code);
+              } catch (err) {
+                // Fallback for unsupported browsers
+                const textarea = document.createElement("textarea");
+                textarea.value = code;
+                document.body.appendChild(textarea);
+                textarea.select();
+                document.execCommand("copy");
+                document.body.removeChild(textarea);
+                console.log("Copied (fallback):", code);
+              }
+            }}
+            className="p-2 bg-white/10 hover:bg-white/20 rounded-lg transition-colors"
+            title="Copy Code"
+          >
+            📋
+          </button>
+        </div>
+
         <p className="text-white/40 text-sm">
           {players.length} {players.length === 1 ? 'player' : 'players'} connected
         </p>
@@ -82,8 +127,8 @@ export default function LobbyRoom({ gameState, myId, emit }) {
                   ${player.isImposter
                     ? 'game-card-neon-pink'
                     : player.id === myId
-                    ? 'game-card-neon-cyan'
-                    : 'game-card'
+                      ? 'game-card-neon-cyan'
+                      : 'game-card'
                   }
                 `}>
                   <span className="text-white/30 text-lg select-none">⠿</span>

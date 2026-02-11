@@ -19,7 +19,7 @@ const pageVariants = {
 const pageTransition = { duration: 0.35, ease: [0.22, 1, 0.36, 1] }
 
 export default function App() {
-  const { connected, gameState, roleReveal, emit, getSocketId } = useSocket()
+  const { socket, connected, gameState, roleReveal, emit, getSocketId } = useSocket()
   const [joined, setJoined] = useState(false)
   const [myName, setMyName] = useState('')
   const [showCountdown, setShowCountdown] = useState(false)
@@ -61,10 +61,35 @@ export default function App() {
     setPrevPhase(gameState.phase)
   }, [gameState?.phase, gameState?.players?.length])
 
-  const handleJoin = (name) => {
-    setMyName(name)
+
+  // Listen for errors (e.g. Room not found)
+  useEffect(() => {
+    if (!socket) return
+
+    const handleError = ({ message }) => {
+      alert(message)
+      setJoined(false)
+    }
+
+    socket.on('error', handleError)
+    return () => socket.off('error', handleError)
+  }, [socket])
+
+  const handleJoin = (data) => {
+    // data = { name, roomId, action }
+    setMyName(data.name)
     setJoined(true)
-    emit('join', { name })
+    emit('join', data)
+  }
+
+  const handleLeaveRoom = () => {
+    // Disconnect and return to home screen
+    if (socket) {
+      socket.disconnect()
+      socket.connect()
+    }
+    setJoined(false)
+    setMyName('')
   }
 
   const handleCountdownComplete = () => {
@@ -85,7 +110,7 @@ export default function App() {
       case 'lobby':
         return (
           <motion.div key="lobby" variants={pageVariants} initial="initial" animate="in" exit="out" transition={pageTransition}>
-            <LobbyRoom gameState={gameState} myId={myId} emit={emit} />
+            <LobbyRoom gameState={gameState} myId={myId} emit={emit} onLeave={handleLeaveRoom} />
           </motion.div>
         )
 
