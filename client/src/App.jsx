@@ -19,7 +19,7 @@ const pageVariants = {
 const pageTransition = { duration: 0.35, ease: [0.22, 1, 0.36, 1] }
 
 export default function App() {
-  const { socket, connected, gameState, roleReveal, emit, getSocketId } = useSocket()
+  const { socket, connected, gameState, roleReveal, emit, getSocketId, resetGameState } = useSocket()
   const [joined, setJoined] = useState(false)
   const [myName, setMyName] = useState('')
   const [showCountdown, setShowCountdown] = useState(false)
@@ -83,13 +83,18 @@ export default function App() {
   }
 
   const handleLeaveRoom = () => {
-    // Disconnect and return to home screen
+    // Clear all game state before disconnecting
+    resetGameState()
+    setJoined(false)
+    setMyName('')
+    setShowCountdown(false)
+    setPrevPhase(null)
+    setMyId(null)
+    // Disconnect and reconnect for a fresh socket
     if (socket) {
       socket.disconnect()
       socket.connect()
     }
-    setJoined(false)
-    setMyName('')
   }
 
   const handleCountdownComplete = () => {

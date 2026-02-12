@@ -25,6 +25,8 @@ export function useSocket() {
 
     socket.on('disconnect', () => {
       setConnected(false)
+      setGameState(null)
+      setRoleReveal(null)
       console.log('🔴 Disconnected from server')
     })
 
@@ -47,7 +49,10 @@ export function useSocket() {
     }
   }, [])
 
-  const socketId = socketRef.current?.id
+  const resetGameState = useCallback(() => {
+    setGameState(null)
+    setRoleReveal(null)
+  }, [])
 
   return {
     socket: socketRef.current,
@@ -55,6 +60,7 @@ export function useSocket() {
     gameState,
     roleReveal,
     emit,
+    resetGameState,
     socketId: socketRef.current?.id,
     getSocketId: () => socketRef.current?.id,
   }

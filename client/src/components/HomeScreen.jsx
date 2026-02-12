@@ -8,6 +8,12 @@ export default function HomeScreen({ onJoin, connected }) {
   const [step, setStep] = useState('name') // name | choice | join
   const [joining, setJoining] = useState(false)
 
+  // Reset joining state whenever step changes or component remounts
+  // This prevents the "Create Room" button from getting stuck as disabled
+  useEffect(() => {
+    setJoining(false)
+  }, [step])
+
   const handleNameSubmit = (e) => {
     e.preventDefault()
     const trimmed = name.trim()
